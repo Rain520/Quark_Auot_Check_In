@@ -5,9 +5,34 @@ import requests
 
 cookie_list = os.getenv("COOKIE_QUARK").split('\n|&&')
 
+# Telegram Bot 配置
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+
+def send_telegram(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[通知] 未配置 Telegram Bot 环境变量，跳过发送。")
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            print("[通知] Telegram 消息已发送。")
+        else:
+            print(f"[通知] Telegram 发送失败，状态码：{response.status_code}")
+    except Exception as e:
+        print(f"[通知异常] Telegram：{str(e)}")
+
 # 替代 notify 功能
 def send(title, message):
     print(f"{title}: {message}")
+    send_telegram(f"{title}: {message}")
 
 # 获取环境变量 
 def get_env(): 
