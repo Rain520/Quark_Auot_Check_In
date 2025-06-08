@@ -2,9 +2,9 @@ name: Quark签到
 
 on:
   schedule:
-    - cron: '0 1 * * *'    # 每天 09:00 (北京时间)
-    - cron: '0 5 * * *'    # 每天 13:00 (北京时间)
-  workflow_dispatch:       # 手动触发支持
+    - cron: '0 1 * * *'    # 每天 UTC 1:00（北京时间 9:00）
+    - cron: '0 5 * * *'    # 每天 UTC 5:00（北京时间 13:00）
+  workflow_dispatch:       # 支持手动触发
 
 jobs:
   check-if-already-signed:
@@ -22,24 +22,34 @@ jobs:
           name: last-success-date
           path: .
 
+      - name: 初始化签到记录文件
+        run: |
+          if [ ! -f .last_success_date ]; then
+            echo "初始化签到记录文件..."
+            echo "1970-01-01" > .last_success_date
+          fi
+
       - name: 判断是否已签到
         id: check
         run: |
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "当前北京时间: $current_date"
-
-          if [ -f .last_success_date ]; then
-            last_date=$(cat .last_success_date)
-            echo "上次签到日期: $last_date"
-            if [ "$last_date" = "$current_date" ]; then
-              echo "今天已成功签到，跳过执行。"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          
+          last_date=$(cat .last_success_date)
+          echo "上次签到日期: $last_date"
+          
+          if [ "$last_date" = "$current_date" ]; then
+            echo "今天已成功签到，跳过执行。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "今天尚未签到，继续执行。"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "今天尚未签到，继续执行。"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: 调试输出文件内容
+        run: |
+          echo "当前.last_success_date内容:"
+          cat .last_success_date
 
   sign-in:
     needs: check-if-already-signed
@@ -48,6 +58,20 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v3
+
+      - name: 随机延迟（早上）
+        if: github.event.schedule == '0 1 * * *'
+        run: |
+          delay=$((RANDOM % 60))
+          echo "早上签到，延迟 $delay 秒..."
+          sleep $delay
+
+      - name: 随机延迟（下午或手动）
+        if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          delay=$((RANDOM % 30))
+          echo "下午或手动触发，延迟 $delay 秒..."
+          sleep $delay
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
@@ -64,14 +88,34 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python checkIn_Quark.py
 
-      - name: 标记今天签到成功
+      - name: 更新签到日期
         run: |
           date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
           echo "$date_str" > .last_success_date
-          ls -l .last_success_date
+          echo "已更新签到日期: $date_str"
 
-      - name: 上传签到日期到 artifact
+      - name: 上传签到记录
         uses: actions/upload-artifact@v4
         with:
           name: last-success-date
           path: .last_success_date
+          retention-days: 30  # 保留30天记录
+
+      - name: 空提交保持活跃（仅定时触发）
+        if: success() && github.event_name == 'schedule'
+        run: |
+          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git config --local user.name "${{ github.actor }}"
+          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
+          git pull --rebase --autostash
+          git commit --allow-empty -m "CHORE: 保持运行.."
+          git push
+
+      - name: 清理旧的 Workflow 记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 60
