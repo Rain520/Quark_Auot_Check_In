@@ -20,6 +20,7 @@ jobs:
         with:
           name: last-success-date
           path: .
+          continue-on-error: true
 
       - name: 判断是否已签到
         id: check
