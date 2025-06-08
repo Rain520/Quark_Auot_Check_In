@@ -19,7 +19,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last_success_date
-          key: last-success-marker
+          key: last-success-marker-${{ github.run_id }}
+          restore-keys: |
+            last-success-marker-
 
       - name: 判断是否已签到
         id: check
@@ -70,7 +72,7 @@ jobs:
       - name: 安装依赖
         run: pip install requests
 
-      - name: 执行签到脚本前
+      - name: 执行签到脚本
         env:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -89,7 +91,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last_success_date
-          key: last-success-marker
+          key: last-success-marker-${{ github.run_id }}
+          restore-keys: |
+            last-success-marker-
 
       - name: 空提交保持活跃（仅定时触发）
         if: success() && github.event_name == 'schedule'
