@@ -82,6 +82,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          # 确保在正确目录
+          cd ${{ github.workspace }}
           python checkIn_Quark.py
           if [ $? -eq 0 ]; then
             date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
@@ -96,7 +98,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: last-success-date
-          path: .last_success_date
+          path: ${{ github.workspace }}/.last_success_date  # 使用绝对路径
           retention-days: 30
 
       - name: 调试输出
