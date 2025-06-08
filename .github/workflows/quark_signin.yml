@@ -22,34 +22,37 @@ jobs:
           name: last-success-date
           path: ./
 
-      - name: 初始化签到记录文件
+      - name: 移动签到记录文件
+        run: |
+          # 处理下载的Artifact（如果存在）
+          if [ -d last-success-date ]; then
+            mv last-success-date/.last_success_date ./ 2>/dev/null || true
+          fi
+
+      - name: 初始化签到记录
         run: |
           if [ ! -f .last_success_date ]; then
             echo "初始化签到记录文件..."
             echo "1970-01-01" > .last_success_date
           fi
+          echo "当前记录内容: $(cat .last_success_date)"
 
-      - name: 判断是否已签到
+      - name: 判断签到状态
         id: check
         run: |
           current_date=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "当前北京时间: $current_date"
-          
           last_date=$(cat .last_success_date)
-          echo "上次签到日期: $last_date"
+          
+          echo "当前日期: $current_date"
+          echo "最后签到: $last_date"
           
           if [ "$last_date" = "$current_date" ]; then
-            echo "今天已成功签到，跳过执行。"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::今天已签到，跳过"
           else
-            echo "今天尚未签到，继续执行。"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "::notice::需要签到"
           fi
-
-      - name: 调试输出文件内容
-        run: |
-          echo "当前.last_success_date内容:"
-          cat .last_success_date
 
   sign-in:
     needs: check-if-already-signed
@@ -59,24 +62,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 随机延迟（早上）
-        if: github.event.schedule == '0 1 * * *'
+      - name: 随机延迟
         run: |
-          delay=$((RANDOM % 60))
-          echo "早上签到，延迟 $delay 秒..."
+          delay=$(( RANDOM % 60 ))
+          echo "随机延迟 $delay 秒..."
           sleep $delay
 
-      - name: 随机延迟（下午或手动）
-        if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
-        run: |
-          delay=$((RANDOM % 30))
-          echo "下午或手动触发，延迟 $delay 秒..."
-          sleep $delay
-
-      - name: 设置 Python 环境
+      - name: 设置Python环境
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
       - name: 安装依赖
         run: pip install requests
@@ -86,36 +81,26 @@ jobs:
           COOKIE_QUARK: ${{ secrets.COOKIE_QUARK }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python checkIn_Quark.py
-
-      - name: 更新签到日期
         run: |
-          date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
-          echo "$date_str" > .last_success_date
-          echo "已更新签到日期: $date_str"
+          python checkIn_Quark.py
+          if [ $? -eq 0 ]; then
+            date_str=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
+            echo "$date_str" > .last_success_date
+            echo "✅ 签到成功，日期更新为: $date_str"
+          else
+            echo "❌ 签到失败，保留旧日期"
+            exit 1
+          fi
 
       - name: 上传签到记录
         uses: actions/upload-artifact@v4
         with:
           name: last-success-date
-          path: ./
-          retention-days: 30  # 保留30天记录
+          path: .last_success_date
+          retention-days: 30
 
-      - name: 空提交保持活跃（仅定时触发）
-        if: success() && github.event_name == 'schedule'
+      - name: 调试输出
         run: |
-          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
-          git pull --rebase --autostash
-          git commit --allow-empty -m "CHORE: 保持运行.."
-          git push
-
-      - name: 清理旧的 Workflow 记录
-        if: always()
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 60
+          echo "=== 调试信息 ==="
+          ls -la
+          echo "文件内容: $(cat .last_success_date)"
